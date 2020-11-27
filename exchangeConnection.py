@@ -1,25 +1,3 @@
-<<<<<<< HEAD
-import imaplib, email
-
-user = 'virksomhedX@outlook.dk'
-password = 'vamXat-rowsub-2zibqa'
-imap_url = 'Outlook.office365.com'
-
-connection = imaplib.IMAP4_SSL(imap_url)
-connection.login(user, password)
-
-#  TEST  print(connection.list())
-
-connection.select('Inbox')
-
-
-def search(key, value, connection):
-    result, data = connection.search(None, key, '"()"'.format(value))
-    return data
-
-
-print(search('FROM', 'no-reply@microsoft.com', connection))
-=======
 import email
 import imaplib
 import os
@@ -39,6 +17,7 @@ def connection(address, password, host):
 
 
 def read_inbox():
+    mail.select('Inbox')  # selecting inbox folder
     status, data = mail.search(None, '(UNSEEN)')
     inbox_item_list = data[0].split()
     if not inbox_item_list:
@@ -68,6 +47,4 @@ def get_invoices(msg):
 
 
 mail = connection(user, password, host)  # calling function for establishing connection
-mail.select('Inbox')  # selecting inbox folder
 read_inbox()
->>>>>>> First hour of work
