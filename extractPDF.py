@@ -1,3 +1,5 @@
+import collections
+
 import pdfplumber
 import os
 import shutil
@@ -36,25 +38,48 @@ def update():
 
 
 def search(invoice):
+    invoice_data = collections.defaultdict(list)   # creating dictionary for invoice data
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
         text = page.extract_text()
     # TEST print(text)
     for row in text.split('\n'):  # splitting new line
-        if row.startswith('Balance Due'):
-            return row.split()[-1].replace('$', '')  # last row from end
+        # print(row)
+        if row.startswith('Name:'):
+            name = row.replace('Name: ', '')
+        if row.__contains__('INVOICE_ID'):
+            invoice_ID = row.split()[-1]
+        if row.startswith('TOTAL'):
+            total = row.split()[-1]
+        if row.startswith('#'):
+            service = row.split()[1]
+            cost = row.split()[-2]
+            invoice_data['id'].append(invoice_id)
+            invoice_data['service'].append(service)
+            invoice_data['name'].append(name)
+            invoice_data['total'].append(total)
+            print(service)
+            print(cost)
+            if estimation_check(service, cost):
+                print('Check approved')
+            else:
+                print('Check not approved')
+                return
 
-    #  if row.startswith('Labor'):
-    #     item = row.split()[0]
 
-
-def estimation_check(item):
+def estimation_check(item, cost):
+    approved = False
     with open('estimations.csv', 'r') as csv_file:
         csv_reader = csv.DictReader(csv_file)
         for line in csv_reader:
             if item == line['Item']:
-                return line['Estimation']
-        print('Nothing found')
+                estimation = line['Estimation']
+                diff = get_change(float(cost), float(estimation))
+                if diff < 20:
+                    approved = True
+                else:
+                    approved = False
+        return approved
 
 
 def get_change(current, previous):
@@ -70,15 +95,6 @@ new_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchan
 treated_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/TreatedInvoices'
 invoices = check_for_new_invoices()  # returns array of invoices
 for invoice in invoices:
-    balance = search(invoice)
-    print(balance)
-    item = 'Labor'
-    estimation = estimation_check(item)
-    change = get_change(float(balance), float(estimation))
-    print(change)
-    if change < 20:
-        print('Approved')
-    else:
-        print('Please notice the price change')
+    search(invoice)
 
 #   update()  # deletes array and files in invoice directory
