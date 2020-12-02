@@ -1,13 +1,14 @@
 import collections
-
 import pdfplumber
 import os
 import shutil
 import csv
+import requests
 import pandas as pd
 from openpyxl import load_workbook
 
 
+#   TEST - First Step
 #   import requests
 #   First step for learning to deal with .pdfs
 #   invoice_url = 'http://www.k-billing.com/example_invoices/professionalblue_example.pdf'
@@ -37,7 +38,7 @@ def update():
         shutil.move(os.path.join(new_invoices_dir, file_name), treated_invoices_dir)
 
 
-def search(invoice):
+def extract_data(invoice):
     invoice_data = collections.defaultdict(list)  # creating dictionary for invoice data
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
@@ -57,12 +58,16 @@ def search(invoice):
             cost = row.split()[-2]
             if estimation_check(service, cost):
                 print('Price approved')
-                invoice_data['service'].append(service)
+                invoice_data['service'].append(service+' Price Approved')
             else:
                 print('Price not approved')
+                invoice_data['service'].append(service + ' Price NOT Approved')
     invoice_data['id'].append(invoice_id)
     invoice_data['total'].append(total)
-    print(invoice_data)
+    # for posting form containing invoice data on website
+    r = requests.post('https://httpbin.org/post', invoice_data)
+    print(r.json())
+
 
 
 def estimation_check(item, cost):
@@ -93,6 +98,6 @@ new_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchan
 treated_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/TreatedInvoices'
 invoices = check_for_new_invoices()  # returns array of invoices
 for invoice in invoices:
-    search(invoice)
+    extract_data(invoice)
 
 #   update()  # deletes array and files in invoice directory
