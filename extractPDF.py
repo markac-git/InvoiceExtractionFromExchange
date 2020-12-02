@@ -38,7 +38,7 @@ def update():
 
 
 def search(invoice):
-    invoice_data = collections.defaultdict(list)   # creating dictionary for invoice data
+    invoice_data = collections.defaultdict(list)  # creating dictionary for invoice data
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
         text = page.extract_text()
@@ -47,24 +47,22 @@ def search(invoice):
         # print(row)
         if row.startswith('Name:'):
             name = row.replace('Name: ', '')
+            invoice_data['name'].append(name)
         if row.__contains__('INVOICE_ID'):
-            invoice_ID = row.split()[-1]
+            invoice_id = row.split()[-1]
         if row.startswith('TOTAL'):
             total = row.split()[-1]
         if row.startswith('#'):
             service = row.split()[1]
             cost = row.split()[-2]
-            invoice_data['id'].append(invoice_id)
-            invoice_data['service'].append(service)
-            invoice_data['name'].append(name)
-            invoice_data['total'].append(total)
-            print(service)
-            print(cost)
             if estimation_check(service, cost):
-                print('Check approved')
+                print('Price approved')
+                invoice_data['service'].append(service)
             else:
-                print('Check not approved')
-                return
+                print('Price not approved')
+    invoice_data['id'].append(invoice_id)
+    invoice_data['total'].append(total)
+    print(invoice_data)
 
 
 def estimation_check(item, cost):
