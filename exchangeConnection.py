@@ -33,9 +33,9 @@ def read_inbox():
 def get_invoices(msg):
     for part in msg.walk():
         if part.get_content_maintype() == 'multipart':
-            continue  # skipping to next part in msg.walk()
+            continue  # skipping to next iteration of msg.walk()
         if part.get_content_disposition() is None:
-            continue  # skipping to next part in msg.walk()
+            continue
         file_name = part.get_filename()
         if not file_name.endswith('.pdf'):
             continue

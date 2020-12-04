@@ -3,9 +3,7 @@ import pdfplumber
 import os
 import shutil
 import csv
-import requests
-import pandas as pd
-from openpyxl import load_workbook
+import mysql.connector
 
 
 #   TEST - First Step
@@ -19,6 +17,15 @@ from openpyxl import load_workbook
 #      with open(local_filename, 'wb') as f:
 #         f.write(r.content)
 #    return local_filename
+
+#   DB init
+# def connect_DB():
+#     mydb = mysql.connector.connect(
+#         host="localhost",  # 127.0.0.1
+#         user="",
+#         password=""
+#     )
+
 
 def check_for_new_invoices():
     invoices = []  # array of invoices
@@ -47,7 +54,7 @@ def extract_data(invoice):
     for row in text.split('\n'):  # splitting new line
         # print(row)
         if row.startswith('Name:'):
-            name = row.replace('Name: ', '')
+            name = row.replace('Name:', '')
             invoice_data['name'].append(name)
         if row.__contains__('INVOICE_ID'):
             invoice_id = row.split()[-1]
@@ -58,16 +65,16 @@ def extract_data(invoice):
             cost = row.split()[-2]
             if estimation_check(service, cost):
                 print('Price approved')
-                invoice_data['service'].append(service+' Price Approved')
+                approved = True
+                invoice_data['service'].append(service + ', Approved: ' + approved.__str__())
             else:
+                approved = False
                 print('Price not approved')
-                invoice_data['service'].append(service + ' Price NOT Approved')
+                invoice_data['service'].append(service + ', Approved: ' + approved.__str__())
     invoice_data['id'].append(invoice_id)
     invoice_data['total'].append(total)
-    # for posting form containing invoice data on website
-    r = requests.post('https://httpbin.org/post', invoice_data)
-    print(r.json())
-
+    print(invoice_data)
+    #   add to DB
 
 
 def estimation_check(item, cost):
@@ -99,5 +106,3 @@ treated_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionEx
 invoices = check_for_new_invoices()  # returns array of invoices
 for invoice in invoices:
     extract_data(invoice)
-
-#   update()  # deletes array and files in invoice directory
