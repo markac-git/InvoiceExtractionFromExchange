@@ -20,7 +20,6 @@ def connection(address, password, host):
 
 
 def read_inbox():
-
     mail.select('Inbox')
     status, data = mail.search(None, '(UNSEEN)')  # search for unread emails
     inbox_item_list = data[0].split()
