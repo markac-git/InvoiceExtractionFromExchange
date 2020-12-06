@@ -3,7 +3,7 @@ Application for automating the process of extracting key values from an invoice 
 
 
 exchangeConnection:
-The application is connecting with the exchange account virksomhedX@outlook.dk. There's currently one unread email for testing. 
+The application is connected with the exchange account virksomhedX@outlook.dk. There's currently one unread email for testing. 
 The program runs through all unread messages and marks them as read. If the email contains a pdf (along with other rules), 
 the attachment is downloaded to the attachment directory, which currently:
 

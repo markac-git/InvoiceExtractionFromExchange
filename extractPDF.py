@@ -1,14 +1,15 @@
 import collections
-import pdfplumber
+import csv
 import os
 import shutil
-import csv
+from configparser import ConfigParser
 import mysql.connector
+import pdfplumber
 
 
 #   TEST - First Step
 #   import requests
-#   First step for learning to deal with .pdfs
+#   First step of learning to deal with .pdfs
 #   invoice_url = 'http://www.k-billing.com/example_invoices/professionalblue_example.pdf'
 #   invoice = download_file(invoice_url)
 # def download_file(url):
@@ -17,14 +18,6 @@ import mysql.connector
 #      with open(local_filename, 'wb') as f:
 #         f.write(r.content)
 #    return local_filename
-
-#   DB init
-# def connect_DB():
-#     mydb = mysql.connector.connect(
-#         host="localhost",  # 127.0.0.1
-#         user="",
-#         password=""
-#     )
 
 
 def check_for_new_invoices():
@@ -38,6 +31,7 @@ def check_for_new_invoices():
     return invoices
 
 
+# cutting invoice from directory new_invoices to treated_invoices
 def update():
     invoices.clear()
     file_names = os.listdir(new_invoices_dir)
@@ -46,39 +40,60 @@ def update():
 
 
 def extract_data(invoice):
-    invoice_data = collections.defaultdict(list)  # creating dictionary for invoice data
+    invoice_data = {}  # creating dictionary for invoice data
+    services_data = []  # creating array
+
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
         text = page.extract_text()
-    # TEST print(text)
-    for row in text.split('\n'):  # splitting new line
-        # print(row)
-        if row.startswith('Name:'):
-            name = row.replace('Name:', '')
-            invoice_data['name'].append(name)
-        if row.__contains__('INVOICE_ID'):
-            invoice_id = row.split()[-1]
-        if row.startswith('TOTAL'):
-            total = row.split()[-1]
+    for row in text.split('\n'):
+        if row.lower().__contains__('company name: '):
+            invoice_data['Company'] = row.lower().replace('company name: ', '').upper()
+        if row.lower().__contains__('date:'):
+            date = row.split()[-1]
+            if date.__contains__('/' or '-'):
+                date = date.replace('/' or '-', '')
+            invoice_data['Date'] = date
+        if row.lower().startswith('name:'):
+            invoice_data['Name'] = row.lower().replace('name:', '').upper()
+        if row.lower().__contains__('invoice_id'):
+            invoice_data['Invoice_ID'] = row.split()[-1]
+        if row.lower().startswith('total' or 'amount'):
+            invoice_data['Total'] = row.split()[-1]
         if row.startswith('#'):
-            service = row.split()[1]
+            service = row.split()[1].upper()
             cost = row.split()[-2]
+            hours = row.split()[2]
             if estimation_check(service, cost):
-                print('Price approved')
                 approved = True
-                invoice_data['service'].append(service + ', Approved: ' + approved.__str__())
             else:
                 approved = False
-                print('Price not approved')
-                invoice_data['service'].append(service + ', Approved: ' + approved.__str__())
-    invoice_data['id'].append(invoice_id)
-    invoice_data['total'].append(total)
-    print(invoice_data)
-    #   add to DB
+                add_service(service)    # adding service to estimations if false
+            services_data.append({'Description': service, 'Hours': hours, 'Cost': cost, 'Approved': approved})
+            invoice_data['Approved'] = approved
+    # pushing array into dictionary to access data of every service (e.g. (l: 140+))
+    invoice_data['Service(s)'] = services_data
+    return invoice_data
 
 
 def estimation_check(item, cost):
-    approved = False
+    """
+    Comparing with estimation price in db
+    If an estimation exist and diff is smaller that 20 percent
+    :return: true/false boolean
+    """
+    mycursor.execute("SELECT * FROM id15598460_erp.estimations;")
+    for row in mycursor:
+        if item == row[0]:
+            estimation = row[1]
+            diff = get_change(float(cost), float(estimation))
+            if diff < 20:
+                approved = True
+            else:
+                approved = False
+    return approved
+
+    """ FIRST STEP FOR DEALING WITH .csv files    
     with open('estimations.csv', 'r') as csv_file:
         csv_reader = csv.DictReader(csv_file)
         for line in csv_reader:
@@ -90,9 +105,15 @@ def estimation_check(item, cost):
                 else:
                     approved = False
         return approved
+    """
 
 
 def get_change(current, previous):
+    """
+    :param current price
+    :param previous/estimation price
+    :return: change in percentage
+    """
     if current == previous:
         return 0
     try:
@@ -101,8 +122,51 @@ def get_change(current, previous):
         return float('inf')
 
 
+def add_service(service):
+    """ Adding service to estimations section in db with price > INF
+    :param service: item """
+    query = "INSERT INTO estimations (item, price) VALUES (%s, %s);"
+    values = (service, 99999)
+    mycursor.execute(query, values)
+    mydb.commit()
+
+
+def add_invoice(invoice):
+    query = "INSERT INTO invoice (invoiceID, company, date, billedTo, total, approved) VALUES (%s, %s, %s, %s, %s, %s);"
+    values = (invoice['Invoice_ID'], invoice['Company'], invoice['Date'], invoice['Name'], invoice['Total'], invoice['Approved'])
+    mycursor.execute(query, values)
+    mydb.commit()
+
+    for s in invoice['Service(s)']:
+        query = "INSERT INTO service (name, hours, rate, approved) VALUES (%s, %s, %s, %s);"
+        values = (s['Description'], s['Hours'], s['Cost'], s['Approved'])
+        mycursor.execute(query, values)
+        mydb.commit()
+
+    """TESTING 
+    mycursor.execute("SELECT * FROM id15598460_erp.invoice;")
+    for x in mycursor:
+        print(x)
+    """
+
+"""
+//Configuration
+Reading information from config.ini in order to hide information
+as .gitignore contains "/config.ini"  
+"""
+config = ConfigParser()
+config.read('config.ini')
+mydb = mysql.connector.connect(
+    host=config['Database']['host'],
+    user=config['Database']['user'],
+    password=config['Database']['password'],
+    database=config['Database']['database']
+)
+mycursor = mydb.cursor()
+
 new_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/NewInvoices'
 treated_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/TreatedInvoices'
 invoices = check_for_new_invoices()  # returns array of invoices
 for invoice in invoices:
-    extract_data(invoice)
+    invoice_data = extract_data(invoice)
+    add_invoice(invoice_data)
