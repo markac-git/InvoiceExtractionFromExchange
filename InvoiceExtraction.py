@@ -1,29 +1,41 @@
-import collections
-import csv
 import os
 import shutil
+import time
 from configparser import ConfigParser
 import mysql.connector
 import pdfplumber
+import sendMail
 
 
-#   TEST - First Step
-#   import requests
-#   First step of learning to deal with .pdfs
-#   invoice_url = 'http://www.k-billing.com/example_invoices/professionalblue_example.pdf'
-#   invoice = download_file(invoice_url)
-# def download_file(url):
-#    local_filename = url.split('/')[-1]  # splitting from last slash
-#   with requests.get(url) as r:  # using requests library for accessing url
-#      with open(local_filename, 'wb') as f:
-#         f.write(r.content)
-#    return local_filename
+def main():
+    if db_connection:
+        for invoice in invoices:
+            if extract_data(invoice):
+                invoice_data = extract_data(invoice)
+                try:
+                    add_invoice(invoice_data)
+                except(ConnectionError):
+                    print('Database connection error')
+                    return
+                else:  # Probably due to wrong input data as connection is already established
+                    print('Extraction Failure')
+                    from_address = invoice.split()[-2].replace('<', '').replace('>', '')
+                    send_error_mail(from_address)  # Due to above theory
+
+
+def send_error_mail(to_address):
+    sendMail.send_email(to_address)
 
 
 def check_for_new_invoices():
+    """
+    Generates the file names in a directory tree by walking the tree
+    either top-down or bottom-up. For each directory in the tree rooted
+    at directory top (including top itself), it yields a 3-tuple
+    (dirpath, dirnames, filenames). Appending array if file is .pdf
+    """
     invoices = []  # array of invoices
-    for dirpath, subdirs, files in os.walk(  # tuple
-            new_invoices_dir):  # the path to the directory. dirnames is a list of the names of the subdirectories in dirpath filenames is a list of the names of the non-directory files in dirpath
+    for dirpath, subdirs, files in os.walk(new_invoices_dir):
         for f in files:
             if f.endswith(".pdf"):
                 invoices.append(
@@ -31,8 +43,8 @@ def check_for_new_invoices():
     return invoices
 
 
-# cutting invoice from directory new_invoices to treated_invoices
 def update():
+    """cutting invoice from directory new_invoices to treated_invoices"""
     invoices.clear()
     file_names = os.listdir(new_invoices_dir)
     for file_name in file_names:
@@ -40,8 +52,13 @@ def update():
 
 
 def extract_data(invoice):
+    """
+    :param invoice:
+    :return: invoice data - array pushed into dictionary
+    """
     invoice_data = {}  # creating dictionary for invoice data
-    services_data = []  # creating array
+    services_data = []
+    extraction_completed = False
 
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
@@ -68,12 +85,17 @@ def extract_data(invoice):
                 approved = True
             else:
                 approved = False
-                add_service(service)    # adding service to estimations if false
+                add_service(service)  # adding service to estimations if false
             services_data.append({'Description': service, 'Hours': hours, 'Cost': cost, 'Approved': approved})
             invoice_data['Approved'] = approved
     # pushing array into dictionary to access data of every service (e.g. (l: 140+))
     invoice_data['Service(s)'] = services_data
-    return invoice_data
+
+    if extraction_completed:
+        print('Data extracted')
+        return invoice_data
+    else:
+        return None
 
 
 def estimation_check(item, cost):
@@ -93,20 +115,6 @@ def estimation_check(item, cost):
                 approved = False
     return approved
 
-    """ FIRST STEP FOR DEALING WITH .csv files    
-    with open('estimations.csv', 'r') as csv_file:
-        csv_reader = csv.DictReader(csv_file)
-        for line in csv_reader:
-            if item == line['Item']:
-                estimation = line['Estimation']
-                diff = get_change(float(cost), float(estimation))
-                if diff < 20:
-                    approved = True
-                else:
-                    approved = False
-        return approved
-    """
-
 
 def get_change(current, previous):
     """
@@ -123,50 +131,59 @@ def get_change(current, previous):
 
 
 def add_service(service):
-    """ Adding service to estimations section in db with price > INF
+    """ Adding service to estimations section in db with price --> INF
     :param service: item """
     query = "INSERT INTO estimations (item, price) VALUES (%s, %s);"
     values = (service, 99999)
     mycursor.execute(query, values)
-    mydb.commit()
+    # mydb.commit()
 
 
 def add_invoice(invoice):
+    """
+    Adding invoice data to db
+    :param invoice contains all information as
+    an array is pushed into a dictionary
+    """
     query = "INSERT INTO invoice (invoiceID, company, date, billedTo, total, approved) VALUES (%s, %s, %s, %s, %s, %s);"
-    values = (invoice['Invoice_ID'], invoice['Company'], invoice['Date'], invoice['Name'], invoice['Total'], invoice['Approved'])
+    values = (
+        invoice['Invoice_ID'], invoice['Company'], invoice['Date'], invoice['Name'], invoice['Total'],
+        invoice['Approved'])
     mycursor.execute(query, values)
-    mydb.commit()
+    # mydb.commit()
 
     for s in invoice['Service(s)']:
         query = "INSERT INTO service (name, hours, rate, approved) VALUES (%s, %s, %s, %s);"
         values = (s['Description'], s['Hours'], s['Cost'], s['Approved'])
         mycursor.execute(query, values)
-        mydb.commit()
+        # mydb.commit()
 
-    """TESTING 
-    mycursor.execute("SELECT * FROM id15598460_erp.invoice;")
-    for x in mycursor:
-        print(x)
-    """
 
-"""
-//Configuration
+""" Configuration - ONLY RUNS ONCE WHEN IMPORTED
 Reading information from config.ini in order to hide information
 as .gitignore contains "/config.ini"  
 """
+
 config = ConfigParser()
 config.read('config.ini')
-mydb = mysql.connector.connect(
-    host=config['Database']['host'],
-    user=config['Database']['user'],
-    password=config['Database']['password'],
-    database=config['Database']['database']
-)
-mycursor = mydb.cursor()
+db_connection = False
+while not db_connection:
+    try:
+        mydb = mysql.connector.connect(
+            host=config['Database']['host'],
+            user=config['Database']['user'],
+            password=config['Database']['password'],
+            database=config['Database']['database']
+        )
+        mycursor = mydb.cursor()  # for exucuting commands
+        if mydb:
+            db_connection = True  # breaking while-loop
+            print('Database Connection Established.')
+    except:
+        print('Database Connection Error.')
+        time.sleep(5)
+        print('Reconnecting Database... ')
 
-new_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/NewInvoices'
-treated_invoices_dir = '/Users/markcederborg/PycharmProjects/InvoiceExtractionExchange/AttachmentDirectory/TreatedInvoices'
+new_invoices_dir = config['Directories']['new_invoices_dir']
+treated_invoices_dir = config['Directories']['treated_invoices_dir']
 invoices = check_for_new_invoices()  # returns array of invoices
-for invoice in invoices:
-    invoice_data = extract_data(invoice)
-    add_invoice(invoice_data)
