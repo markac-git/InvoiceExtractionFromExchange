@@ -5,7 +5,13 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
-def send_email(to_address):
+def send_email(to_address, message):
+    if not message:  # default
+        message = 'Sorry for the inconvenience but we are experiencing ' \
+                  'some issues extracting your invoice<br>due to our new ' \
+                  'system. Please visit: <a href="#">instructions</a> in ' \
+                  'order to mail us a valid invoice to <br> receive your ' \
+                  'payment sooner.'
     """Configuration"""
     config = ConfigParser()
     config.read('config.ini')
@@ -28,12 +34,9 @@ def send_email(to_address):
     msg.attach(msgAlternative)
     text = MIMEText('<html><head></head><body>'
                     '<h>Hi!</h><br>'
-                    '<p>Sorry for the inconvenience but we are experiencing some issues extracting your invoice<br>'
-                    'due to our new system. Please visit: <a href="#">instructions</a> in order to mail us a valid '
-                    'invoice to <br> receive your payment sooner.<br><br>'
-                    'Kind regards<br>'
-                    'Main Office - VirksomhedX'
-                    '</p></body></html>', 'html', 'utf-8')
+                    '<p>%s' % message + '<br><br>'
+                    + 'Kind regards<br>Main Office - VirksomhedX'
+                      '</p></body></html>', 'html', 'utf-8')
     # _maintype as the Content-Type major type (e.g. text or image)
     # and _params is a parameter key/value dictionary
     msgAlternative.attach(text)
@@ -53,7 +56,3 @@ def send_email(to_address):
             print('Email sent!')
     except:
         print('Something went wrong...')
-
-
-if __name__ == '__main__':
-    send_email()

@@ -2,6 +2,26 @@ import email
 import imaplib
 import os
 from configparser import ConfigParser
+import SendMail
+
+mail = None
+attachment_dir = None
+
+
+def init():
+    global attachment_dir
+    global mail
+    """Configuration"""
+    config = ConfigParser()
+    config.read('config.ini')
+    attachment_dir = config['Directories']['new_invoices_dir']
+    user = config['Gmail']['user']
+    password = config['Gmail']['password']
+    host = config['Gmail']['host']
+    port = config['Gmail']['port']
+    while not mail:
+        mail = connection(user, password, host, port)  # calling function for establishing connection
+    print('Mail connection established')
 
 
 def connection(address, password, host, port):
@@ -31,10 +51,9 @@ def read_inbox():
         email_message = email.message_from_string(string_email)  # converting to object
         if get_invoices(email_message):
             print('Invoice collected')
-        # else:
-        # sender_email = email_message['From']
-        # print(sender_email)
-        # send_email('TEST', 'TESTBODY', user, sender_email)
+        else:
+            sender_email = email_message['From']
+            SendMail.send_email(sender_email)  # sends default mail
         mail.uid('STORE', item, '+FLAGS', '\\SEEN')  # marking email as read
 
 
@@ -53,14 +72,3 @@ def get_invoices(msg):
             file_path = os.path.join(attachment_dir, sender_email + '_' + file_name)
             with open(file_path, 'wb') as f:  # wb = wide binary
                 f.write(part.get_payload(decode=True))
-
-
-"""Configuration - ONLY RUNS ONCE WHEN IMPORTED"""
-config = ConfigParser()
-config.read('config.ini')
-attachment_dir = config['Directories']['new_invoices_dir']
-user = config['Gmail']['user']
-password = config['Gmail']['password']
-host = config['Gmail']['host']
-port = config['Gmail']['port']
-mail = connection(user, password, host, port)  # calling function for establishing connection

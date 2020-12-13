@@ -1,30 +1,58 @@
 import os
 import shutil
-import time
 from configparser import ConfigParser
 import mysql.connector
 import pdfplumber
-import sendMail
+import SendMail
+
+new_invoices_dir = None
+treated_invoices_dir = None
+db_connection, mydb, mycursor = False, None, None
+config = None
+
+
+def init():
+    global new_invoices_dir
+    global treated_invoices_dir
+    global config
+    """ Configuration 
+    Reading information from config.ini in order to hide information
+    as .gitignore contains "/config.ini"""
+    config = ConfigParser()
+    config.read('config.ini')
+    new_invoices_dir = config['Directories']['new_invoices_dir']
+    treated_invoices_dir = config['Directories']['treated_invoices_dir']
+    connect_db()
+
+
+def connect_db():
+    global db_connection
+    global mydb
+    global mycursor
+    print('Connecting database...')
+    mydb = mysql.connector.connect(
+        host=config['Database']['host'],
+        user=config['Database']['user'],
+        password=config['Database']['password'],
+        database=config['Database']['database']
+    )
+    if mydb:
+        print('Database Connection Established.')
+        mycursor = mydb.cursor()  # for executing commands
 
 
 def main():
     if db_connection:
+        invoices = check_for_new_invoices()  # returns array of invoices
         for invoice in invoices:
-            if extract_data(invoice):
-                invoice_data = extract_data(invoice)
-                try:
-                    add_invoice(invoice_data)
-                except(ConnectionError):
-                    print('Database connection error')
-                    return
-                else:  # Probably due to wrong input data as connection is already established
-                    print('Extraction Failure')
-                    from_address = invoice.split()[-2].replace('<', '').replace('>', '')
-                    send_error_mail(from_address)  # Due to above theory
-
-
-def send_error_mail(to_address):
-    sendMail.send_email(to_address)
+            completed, invoice_data = extract_data(invoice)
+            if completed:
+                add_invoice(invoice_data)
+            else:  # Probably due to wrong input data as connection is already established
+                print('Extraction Failure')
+                from_address = invoice.split()[-2].replace('<', '').replace('>', '')
+                # Due to above theory
+                SendMail.send_email(from_address)
 
 
 def check_for_new_invoices():
@@ -35,7 +63,7 @@ def check_for_new_invoices():
     (dirpath, dirnames, filenames). Appending array if file is .pdf
     """
     invoices = []  # array of invoices
-    for dirpath, subdirs, files in os.walk(new_invoices_dir):
+    for dirpath, subdirs, files in os.walk(new_invoices_dir):  # tuple
         for f in files:
             if f.endswith(".pdf"):
                 invoices.append(
@@ -43,7 +71,7 @@ def check_for_new_invoices():
     return invoices
 
 
-def update():
+def update(invoices):
     """cutting invoice from directory new_invoices to treated_invoices"""
     invoices.clear()
     file_names = os.listdir(new_invoices_dir)
@@ -58,7 +86,6 @@ def extract_data(invoice):
     """
     invoice_data = {}  # creating dictionary for invoice data
     services_data = []
-    extraction_completed = False
 
     with pdfplumber.open(invoice) as pdf:
         page = pdf.pages[0]
@@ -83,19 +110,33 @@ def extract_data(invoice):
             hours = row.split()[2]
             if estimation_check(service, cost):
                 approved = True
+                add_service(service, cost)
             else:
                 approved = False
-                add_service(service)  # adding service to estimations if false
+                add_service(service, 999999)  # adding service to estimations with cost --> inf if false
             services_data.append({'Description': service, 'Hours': hours, 'Cost': cost, 'Approved': approved})
             invoice_data['Approved'] = approved
+
+    for v in invoice_data.values():
+        v = v.__str__()
+        if v.__contains__('_') or v.__contains__(':') or v.__contains__('.'):
+            extraction_completed = False
+        else:
+            extraction_completed = True
+
+
     # pushing array into dictionary to access data of every service (e.g. (l: 140+))
     invoice_data['Service(s)'] = services_data
 
+    return extraction_completed, invoice_data  # returning tuple
+
+    """
     if extraction_completed:
         print('Data extracted')
         return invoice_data
     else:
-        return None
+        return False
+    """
 
 
 def estimation_check(item, cost):
@@ -109,7 +150,7 @@ def estimation_check(item, cost):
         if item == row[0]:
             estimation = row[1]
             diff = get_change(float(cost), float(estimation))
-            if diff < 20:
+            if diff <= 20:
                 approved = True
             else:
                 approved = False
@@ -130,11 +171,12 @@ def get_change(current, previous):
         return float('inf')
 
 
-def add_service(service):
+def add_service(service, cost):
     """ Adding service to estimations section in db with price --> INF
+    :param cost:
     :param service: item """
     query = "INSERT INTO estimations (item, price) VALUES (%s, %s);"
-    values = (service, 99999)
+    values = (service, int(cost))
     mycursor.execute(query, values)
     # mydb.commit()
 
@@ -157,33 +199,4 @@ def add_invoice(invoice):
         values = (s['Description'], s['Hours'], s['Cost'], s['Approved'])
         mycursor.execute(query, values)
         # mydb.commit()
-
-
-""" Configuration - ONLY RUNS ONCE WHEN IMPORTED
-Reading information from config.ini in order to hide information
-as .gitignore contains "/config.ini"  
-"""
-
-config = ConfigParser()
-config.read('config.ini')
-db_connection = False
-while not db_connection:
-    try:
-        mydb = mysql.connector.connect(
-            host=config['Database']['host'],
-            user=config['Database']['user'],
-            password=config['Database']['password'],
-            database=config['Database']['database']
-        )
-        mycursor = mydb.cursor()  # for exucuting commands
-        if mydb:
-            db_connection = True  # breaking while-loop
-            print('Database Connection Established.')
-    except:
-        print('Database Connection Error.')
-        time.sleep(5)
-        print('Reconnecting Database... ')
-
-new_invoices_dir = config['Directories']['new_invoices_dir']
-treated_invoices_dir = config['Directories']['treated_invoices_dir']
-invoices = check_for_new_invoices()  # returns array of invoices
+    print('Invoice added')
